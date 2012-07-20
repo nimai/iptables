@@ -1,0 +1,4 @@
+The mptcp module matches the TCP segments using the Multipath TCP extension.
+It only detects the presence of that TCP option, associated to the number 30.
+.PP
+There is no option at the moment.
