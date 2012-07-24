@@ -12,6 +12,9 @@
 #ifndef TCPOPT_MD5SIG
 #	define TCPOPT_MD5SIG 19
 #endif
+#ifndef TCPOPT_MPTCP
+#	define TCPOPT_MPTCP 30
+#endif
 
 enum {
 	O_STRIP_OPTION = 0,
@@ -34,6 +37,7 @@ static const struct tcp_optionmap tcp_optionmap[] = {
 	{"sack",           "Selective ACK",        TCPOPT_SACK},
 	{"timestamp",      "Timestamp",            TCPOPT_TIMESTAMP},
 	{"md5",            "MD5 signature",        TCPOPT_MD5SIG},
+    {"mptcp",          "Multipath TCP",        TCPOPT_MPTCP},
 	{NULL},
 };
 
