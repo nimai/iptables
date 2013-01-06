@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <linux/netfilter/x_tables.h>
@@ -78,7 +79,7 @@ static int mptcp_mt_parse(int c, char **argv, int invert,
 			xtables_error(PARAMETER_PROBLEM, "xt_mptcp: "
 					"Only use \"--capable\" once!");
 		*flags |= XT_MPCAPABLE_PRESENT;
-		info->suptypes |= XT_MPCAPABLE_PRESENT;
+		info->subtypes |= XT_MPCAPABLE_PRESENT;
 		if (invert)
 			info->invflags |= XT_MPCAPABLE_PRESENT;
 		return true;
@@ -94,7 +95,7 @@ static int mptcp_mt_parse(int c, char **argv, int invert,
 		return true;
 
 	case '3': /* match dss flags */
-		if (*flags & DSS_FLAGS)
+		if (*flags & XT_DSS_FLAGS)
 			xtables_error(PARAMETER_PROBLEM,
 					"xt_mptcp: Only use \"--dss\" once!");
 		/* 2nd arg handling */
@@ -116,7 +117,7 @@ static void mptcp_mt_init(struct xt_entry_match *match)
     struct xt_mptcp_mtinfo *info = (void *)match->data;
 	/* whenever the match is used, it matches only MPTCP packets, even without
 	 * parameter */
-	info->flags = XT_MPTCP_PRESENT;
+	info->subtypes = XT_MPTCP_PRESENT;
 }
     
 static void mptcp_mt_help(void)

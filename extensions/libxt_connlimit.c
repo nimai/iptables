@@ -10,11 +10,13 @@ enum {
 	O_MASK,
 	O_SADDR,
 	O_DADDR,
+	O_MPTCP,
 	F_UPTO  = 1 << O_UPTO,
 	F_ABOVE = 1 << O_ABOVE,
 	F_MASK  = 1 << O_MASK,
 	F_SADDR = 1 << O_SADDR,
 	F_DADDR = 1 << O_DADDR,
+	F_ANY	= F_MASK | F_SADDR | F_DADDR,
 };
 
 static void connlimit_help(void)
@@ -25,7 +27,8 @@ static void connlimit_help(void)
 "  --connlimit-above n    match if the number of existing connections is >n\n"
 "  --connlimit-mask n     group hosts using prefix length (default: max len)\n"
 "  --connlimit-saddr      select source address for grouping\n"
-"  --connlimit-daddr      select destination addresses for grouping\n");
+"  --connlimit-daddr      select destination addresses for grouping\n"
+"  --connlimit-mptcp	  group per membership at a Multipath TCP connection\n");
 }
 
 #define s struct xt_connlimit_info
@@ -41,6 +44,8 @@ static const struct xt_option_entry connlimit_opts[] = {
 	{.name = "connlimit-saddr", .id = O_SADDR, .excl = F_DADDR,
 	 .type = XTTYPE_NONE},
 	{.name = "connlimit-daddr", .id = O_DADDR, .excl = F_SADDR,
+	 .type = XTTYPE_NONE},
+	{.name = "connlimit-mptcp", .id = O_MPTCP, .excl = F_ANY,
 	 .type = XTTYPE_NONE},
 	XTOPT_TABLEEND,
 };
@@ -82,6 +87,9 @@ static void connlimit_parse(struct xt_option_call *cb, uint8_t family)
 				"xt_connlimit.0 does not support "
 				"--connlimit-daddr");
 		info->flags |= XT_CONNLIMIT_DADDR;
+		break;
+	case O_MPTCP:
+		info->flags |= XT_CONNLIMIT_MPTCP;
 		break;
 	}
 }
@@ -163,6 +171,8 @@ static void connlimit_save4(const void *ip, const struct xt_entry_match *match)
 		else
 			printf(" --connlimit-saddr");
 	}
+	if (info->flags & XT_CONNLIMIT_MPTCP)
+		printf(" --connlimit-mptcp");
 }
 
 static void connlimit_save6(const void *ip, const struct xt_entry_match *match)
@@ -181,6 +191,8 @@ static void connlimit_save6(const void *ip, const struct xt_entry_match *match)
 		else
 			printf(" --connlimit-saddr");
 	}
+	if (info->flags & XT_CONNLIMIT_MPTCP)
+		printf(" --connlimit-mptcp");
 }
 
 static struct xtables_match connlimit_mt_reg[] = {

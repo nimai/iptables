@@ -8,6 +8,7 @@ struct xt_connlimit_data;
 enum {
 	XT_CONNLIMIT_INVERT = 1 << 0,
 	XT_CONNLIMIT_DADDR  = 1 << 1,
+	XT_CONNLIMIT_MPTCP  = 1 << 2,
 };
 
 struct xt_connlimit_info {

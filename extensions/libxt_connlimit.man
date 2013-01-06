@@ -18,6 +18,9 @@ Apply the limit onto the source group. This is the default if
 .TP
 \fB\-\-connlimit\-daddr\fP
 Apply the limit onto the destination group.
+.TP
+\fB\-\-connlimit\-mptcp\fP
+Apply the limit per multipath TCP connection.
 .PP
 Examples:
 .TP

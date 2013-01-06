@@ -1,4 +1,16 @@
 The mptcp module matches the TCP segments using the Multipath TCP extension.
-It only detects the presence of that TCP option, associated to the number 30.
+It detects that TCP option, associated to the number 30. It can also match
+more specific content.
 .PP
-There is no option at the moment.
+Without parameter, the match matches all packets with the MPTCP option.
+Additionnal parameters are available:
+.TP
+\fB\-\-capable\fP 
+Match MP_CAPABLE packets.
+.TP
+\fB\-\-join\fP 
+Match MP_JOIN packets.
+.TP
+\fB\-\-dss flags mask\fP 
+Match DSS packets with flags from mask set.
+Available flags: ACK,FIN,MAP.
