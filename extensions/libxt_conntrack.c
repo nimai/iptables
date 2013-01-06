@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <xtables.h>
+/* enables the SUBFLOW state */
+#define CONFIG_NF_CONNTRACK_MPTCP
 #include <linux/netfilter/xt_conntrack.h>
 #include <linux/netfilter/nf_conntrack_common.h>
 
@@ -68,7 +70,7 @@ static void conntrack_mt_help(void)
 {
 	printf(
 "conntrack match options:\n"
-"[!] --ctstate {INVALID|ESTABLISHED|NEW|RELATED|UNTRACKED|SNAT|DNAT}[,...]\n"
+"[!] --ctstate {INVALID|ESTABLISHED|NEW|RELATED|SUBFLOW|UNTRACKED|SNAT|DNAT}[,...]\n"
 "                               State(s) to match\n"
 "[!] --ctproto proto            Protocol to match; by number or name, e.g. \"tcp\"\n"
 "[!] --ctorigsrc address[/mask]\n"
@@ -192,6 +194,8 @@ parse_state(const char *state, size_t len, struct xt_conntrack_info *sinfo)
 		sinfo->statemask |= XT_CONNTRACK_STATE_BIT(IP_CT_ESTABLISHED);
 	else if (strncasecmp(state, "RELATED", len) == 0)
 		sinfo->statemask |= XT_CONNTRACK_STATE_BIT(IP_CT_RELATED);
+	else if (strncasecmp(state, "SUFBLOW", len) == 0)
+		sinfo->statemask |= XT_CONNTRACK_STATE_BIT(IP_MPCT_SUFBLOW);
 	else if (strncasecmp(state, "UNTRACKED", len) == 0)
 		sinfo->statemask |= XT_CONNTRACK_STATE_UNTRACKED;
 	else if (strncasecmp(state, "SNAT", len) == 0)
@@ -233,6 +237,8 @@ conntrack_ps_state(struct xt_conntrack_mtinfo3 *info, const char *state,
 		info->state_mask |= XT_CONNTRACK_STATE_BIT(IP_CT_ESTABLISHED);
 	else if (strncasecmp(state, "RELATED", z) == 0)
 		info->state_mask |= XT_CONNTRACK_STATE_BIT(IP_CT_RELATED);
+	else if (strncasecmp(state, "SUBFLOW", z) == 0)
+		info->state_mask |= XT_CONNTRACK_STATE_BIT(IP_MPCT_SUBFLOW);
 	else if (strncasecmp(state, "UNTRACKED", z) == 0)
 		info->state_mask |= XT_CONNTRACK_STATE_UNTRACKED;
 	else if (strncasecmp(state, "SNAT", z) == 0)
@@ -585,6 +591,10 @@ print_state(unsigned int statemask)
 	}
 	if (statemask & XT_CONNTRACK_STATE_BIT(IP_CT_RELATED)) {
 		printf("%sRELATED", sep);
+		sep = ",";
+	}
+	if (statemask & XT_CONNTRACK_STATE_BIT(IP_MPCT_SUBFLOW)) {
+		printf("%sSUBFLOW", sep);
 		sep = ",";
 	}
 	if (statemask & XT_CONNTRACK_STATE_BIT(IP_CT_ESTABLISHED)) {
