@@ -8,7 +8,7 @@
 
 /* Your shared library should call one of these. */
 extern int do_command4(int argc, char *argv[], char **table,
-		      struct xtc_handle **handle);
+		      struct xtc_handle **handle, bool restore);
 extern int delete_chain4(const xt_chainlabel chain, int verbose,
 			struct xtc_handle *handle);
 extern int flush_entries4(const xt_chainlabel chain, int verbose, 
@@ -19,5 +19,7 @@ extern void print_rule4(const struct ipt_entry *e,
 		struct xtc_handle *handle, const char *chain, int counters);
 
 extern struct xtables_globals iptables_globals;
+
+extern struct xtables_globals xtables_globals;
 
 #endif /*_IPTABLES_USER_H*/

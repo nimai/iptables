@@ -18,10 +18,6 @@
 #include "ip6tables.h"
 #include "ip6tables-multi.h"
 
-#ifndef NO_SHARED_LIBS
-#include <dlfcn.h>
-#endif
-
 static int show_counters = 0;
 
 static const struct option options[] = {
@@ -141,8 +137,11 @@ int ip6tables_save_main(int argc, char *argv[])
 	init_extensions6();
 #endif
 
-	while ((c = getopt_long(argc, argv, "bcdt:", options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "bcdt:M:", options, NULL)) != -1) {
 		switch (c) {
+		case 'b':
+			fprintf(stderr, "-b/--binary option is not implemented\n");
+			break;
 		case 'c':
 			show_counters = 1;
 			break;

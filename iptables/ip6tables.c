@@ -52,21 +52,6 @@
 #define FALSE 0
 #endif
 
-#define FMT_NUMERIC	0x0001
-#define FMT_NOCOUNTS	0x0002
-#define FMT_KILOMEGAGIGA 0x0004
-#define FMT_OPTIONS	0x0008
-#define FMT_NOTABLE	0x0010
-#define FMT_NOTARGET	0x0020
-#define FMT_VIA		0x0040
-#define FMT_NONEWLINE	0x0080
-#define FMT_LINENUMBERS 0x0100
-
-#define FMT_PRINT_RULE (FMT_NOCOUNTS | FMT_OPTIONS | FMT_VIA \
-			| FMT_NUMERIC | FMT_NOTABLE)
-#define FMT(tab,notab) ((format) & FMT_NOTABLE ? (notab) : (tab))
-
-
 #define CMD_NONE		0x0000U
 #define CMD_INSERT		0x0001U
 #define CMD_DELETE		0x0002U
@@ -85,7 +70,7 @@
 #define CMD_CHECK		0x4000U
 #define NUMBER_OF_CMD	16
 static const char cmdflags[] = { 'I', 'D', 'D', 'R', 'A', 'L', 'F', 'Z',
-				 'Z', 'N', 'X', 'P', 'E', 'S', 'C' };
+				 'N', 'X', 'P', 'E', 'S', 'Z', 'C' };
 
 #define NUMBER_OF_OPT	ARRAY_SIZE(optflags)
 static const char optflags[]
@@ -117,6 +102,7 @@ static struct option original_opts[] = {
 	{.name = "numeric",       .has_arg = 0, .val = 'n'},
 	{.name = "out-interface", .has_arg = 1, .val = 'o'},
 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
+	{.name = "wait",          .has_arg = 2, .val = 'w'},
 	{.name = "exact",         .has_arg = 0, .val = 'x'},
 	{.name = "version",       .has_arg = 0, .val = 'V'},
 	{.name = "help",          .has_arg = 2, .val = 'h'},
@@ -135,6 +121,7 @@ struct xtables_globals ip6tables_globals = {
 	.program_version = IPTABLES_VERSION,
 	.orig_opts = original_opts,
 	.exit_err = ip6tables_exit_error,
+	.compat_rev = xtables_compatible_revision,
 };
 
 /* Table of legal combinations of commands and options.  If any of the
@@ -158,12 +145,12 @@ static const char commands_v_options[NUMBER_OF_CMD][NUMBER_OF_OPT] =
 /*LIST*/      {' ','x','x','x','x',' ',' ','x','x',' ','x'},
 /*FLUSH*/     {'x','x','x','x','x',' ','x','x','x','x','x'},
 /*ZERO*/      {'x','x','x','x','x',' ','x','x','x','x','x'},
-/*ZERO_NUM*/  {'x','x','x','x','x',' ','x','x','x','x','x'},
 /*NEW_CHAIN*/ {'x','x','x','x','x',' ','x','x','x','x','x'},
 /*DEL_CHAIN*/ {'x','x','x','x','x',' ','x','x','x','x','x'},
 /*SET_POLICY*/{'x','x','x','x','x',' ','x','x','x','x',' '},
 /*RENAME*/    {'x','x','x','x','x',' ','x','x','x','x','x'},
 /*LIST_RULES*/{'x','x','x','x','x',' ','x','x','x','x','x'},
+/*ZERO_NUM*/  {'x','x','x','x','x',' ','x','x','x','x','x'},
 /*CHECK*/     {'x',' ',' ',' ',' ',' ','x',' ',' ','x','x'},
 };
 
@@ -252,7 +239,7 @@ exit_printhelp(const struct xtables_rule_match *matches)
 "Options:\n"
 "    --ipv4	-4		Error (line is ignored by ip6tables-restore)\n"
 "    --ipv6	-6		Nothing (line is ignored by iptables-restore)\n"
-"[!] --proto	-p proto	protocol: by number or name, eg. `tcp'\n"
+"[!] --protocol	-p proto	protocol: by number or name, eg. `tcp'\n"
 "[!] --source	-s address[/mask][,...]\n"
 "				source specification\n"
 "[!] --destination -d address[/mask][,...]\n"
@@ -272,6 +259,7 @@ exit_printhelp(const struct xtables_rule_match *matches)
 "				network interface name ([+] for wildcard)\n"
 "  --table	-t table	table to manipulate (default: `filter')\n"
 "  --verbose	-v		verbose mode\n"
+"  --wait	-w [seconds]	wait for the xtables lock\n"
 "  --line-numbers		print line numbers when listing\n"
 "  --exact	-x		expand numbers (display exact values)\n"
 /*"[!] --fragment	-f		match second or further fragments only\n"*/
@@ -400,6 +388,32 @@ parse_rulenumber(const char *rule)
 	return rulenum;
 }
 
+static void
+parse_chain(const char *chainname)
+{
+	const char *ptr;
+
+	if (strlen(chainname) >= XT_EXTENSION_MAXNAMELEN)
+		xtables_error(PARAMETER_PROBLEM,
+			   "chain name `%s' too long (must be under %u chars)",
+			   chainname, XT_EXTENSION_MAXNAMELEN);
+
+	if (*chainname == '-' || *chainname == '!')
+		xtables_error(PARAMETER_PROBLEM,
+			   "chain name not allowed to start "
+			   "with `%c'\n", *chainname);
+
+	if (xtables_find_target(chainname, XTF_TRY_LOAD))
+		xtables_error(PARAMETER_PROBLEM,
+			   "chain name may not clash "
+			   "with target name\n");
+
+	for (ptr = chainname; *ptr; ptr++)
+		if (isspace(*ptr))
+			xtables_error(PARAMETER_PROBLEM,
+				   "Invalid chain name `%s'", chainname);
+}
+
 static const char *
 parse_target(const char *targetname)
 {
@@ -442,31 +456,6 @@ set_option(unsigned int *options, unsigned int option, uint8_t *invflg,
 	}
 }
 
-static void
-print_num(uint64_t number, unsigned int format)
-{
-	if (format & FMT_KILOMEGAGIGA) {
-		if (number > 99999) {
-			number = (number + 500) / 1000;
-			if (number > 9999) {
-				number = (number + 500) / 1000;
-				if (number > 9999) {
-					number = (number + 500) / 1000;
-					if (number > 9999) {
-						number = (number + 500) / 1000;
-						printf(FMT("%4lluT ","%lluT "), (unsigned long long)number);
-					}
-					else printf(FMT("%4lluG ","%lluG "), (unsigned long long)number);
-				}
-				else printf(FMT("%4lluM ","%lluM "), (unsigned long long)number);
-			} else
-				printf(FMT("%4lluK ","%lluK "), (unsigned long long)number);
-		} else
-			printf(FMT("%5llu ","%llu "), (unsigned long long)number);
-	} else
-		printf(FMT("%8llu ","%llu "), (unsigned long long)number);
-}
-
 
 static void
 print_header(unsigned int format, const char *chain, struct xtc_handle *handle)
@@ -478,9 +467,9 @@ print_header(unsigned int format, const char *chain, struct xtc_handle *handle)
 		printf(" (policy %s", pol);
 		if (!(format & FMT_NOCOUNTS)) {
 			fputc(' ', stdout);
-			print_num(counters.pcnt, (format|FMT_NOTABLE));
+			xtables_print_num(counters.pcnt, (format|FMT_NOTABLE));
 			fputs("packets, ", stdout);
-			print_num(counters.bcnt, (format|FMT_NOTABLE));
+			xtables_print_num(counters.bcnt, (format|FMT_NOTABLE));
 			fputs("bytes", stdout);
 		}
 		printf(")\n");
@@ -563,8 +552,8 @@ print_firewall(const struct ip6t_entry *fw,
 		printf(FMT("%-4u ", "%u "), num);
 
 	if (!(format & FMT_NOCOUNTS)) {
-		print_num(fw->counters.pcnt, format);
-		print_num(fw->counters.bcnt, format);
+		xtables_print_num(fw->counters.pcnt, format);
+		xtables_print_num(fw->counters.bcnt, format);
 	}
 
 	if (!(format & FMT_NOTARGET))
@@ -1040,7 +1029,8 @@ static int print_match_save(const struct xt_entry_match *e,
 		xtables_find_match(e->u.user.name, XTF_TRY_LOAD, NULL);
 
 	if (match) {
-		printf(" -m %s", e->u.user.name);
+		printf(" -m %s",
+			match->alias ? match->alias(e) : e->u.user.name);
 
 		/* some matches don't provide a save function */
 		if (match->save)
@@ -1061,7 +1051,7 @@ static void print_ip(const char *prefix, const struct in6_addr *ip,
 		     const struct in6_addr *mask, int invert)
 {
 	char buf[51];
-	int l = ipv6_prefix_length(mask);
+	int l = xtables_ip6mask_to_cidr(mask);
 
 	if (l == 0 && !invert)
 		return;
@@ -1129,16 +1119,8 @@ void print_rule6(const struct ip6t_entry *e,
 	if (counters < 0)
 		printf(" -c %llu %llu", (unsigned long long)e->counters.pcnt, (unsigned long long)e->counters.bcnt);
 
-	/* Print target name */
+	/* Print target name and targinfo part */
 	target_name = ip6tc_get_target(e, h);
-	if (target_name && (*target_name != '\0'))
-#ifdef IP6T_F_GOTO
-		printf(" -%c %s", e->ipv6.flags & IP6T_F_GOTO ? 'g' : 'j', target_name);
-#else
-		printf(" -j %s", target_name);
-#endif
-
-	/* Print targinfo part */
 	t = ip6t_get_target((struct ip6t_entry *)e);
 	if (t->u.user.name[0]) {
 		struct xtables_target *target =
@@ -1150,6 +1132,7 @@ void print_rule6(const struct ip6t_entry *e,
 			exit(1);
 		}
 
+		printf(" -j %s", target->alias ? target->alias(t) : target_name);
 		if (target->save)
 			target->save(&e->ipv6, t);
 		else {
@@ -1164,7 +1147,13 @@ void print_rule6(const struct ip6t_entry *e,
 				exit(1);
 			}
 		}
-	}
+	} else if (target_name && (*target_name != '\0'))
+#ifdef IP6T_F_GOTO
+		printf(" -%c %s", e->ipv6.flags & IP6T_F_GOTO ? 'g' : 'j', target_name);
+#else
+		printf(" -j %s", target_name);
+#endif
+
 	printf("\n");
 }
 
@@ -1249,27 +1238,6 @@ generate_entry(const struct ip6t_entry *fw,
 	return e;
 }
 
-static void clear_rule_matches(struct xtables_rule_match **matches)
-{
-	struct xtables_rule_match *matchp, *tmp;
-
-	for (matchp = *matches; matchp;) {
-		tmp = matchp->next;
-		if (matchp->match->m) {
-			free(matchp->match->m);
-			matchp->match->m = NULL;
-		}
-		if (matchp->match == matchp->match->next) {
-			free(matchp->match);
-			matchp->match = NULL;
-		}
-		free(matchp);
-		matchp = tmp;
-	}
-
-	*matches = NULL;
-}
-
 static void command_jump(struct iptables_command_state *cs)
 {
 	size_t size;
@@ -1286,8 +1254,17 @@ static void command_jump(struct iptables_command_state *cs)
 
 	cs->target->t = xtables_calloc(1, size);
 	cs->target->t->u.target_size = size;
-	strcpy(cs->target->t->u.user.name, cs->jumpto);
+	if (cs->target->real_name == NULL) {
+		strcpy(cs->target->t->u.user.name, cs->jumpto);
+	} else {
+		strcpy(cs->target->t->u.user.name, cs->target->real_name);
+		if (!(cs->target->ext_flags & XTABLES_EXT_ALIAS))
+			fprintf(stderr, "Notice: The %s target is converted into %s target "
+			        "in rule listing and saving.\n",
+			        cs->jumpto, cs->target->real_name);
+	}
 	cs->target->t->u.user.revision = cs->target->revision;
+
 	xs_init_target(cs->target);
 	if (cs->target->x6_options != NULL)
 		opts = xtables_options_xfrm(ip6tables_globals.orig_opts, opts,
@@ -1314,8 +1291,16 @@ static void command_match(struct iptables_command_state *cs)
 	size = XT_ALIGN(sizeof(struct xt_entry_match)) + m->size;
 	m->m = xtables_calloc(1, size);
 	m->m->u.match_size = size;
-	strcpy(m->m->u.user.name, m->name);
+	if (m->real_name == NULL) {
+		strcpy(m->m->u.user.name, m->name);
+	} else {
+		strcpy(m->m->u.user.name, m->real_name);
+		if (!(m->ext_flags & XTABLES_EXT_ALIAS))
+			fprintf(stderr, "Notice: The %s match is converted into %s match "
+			        "in rule listing and saving.\n", m->name, m->real_name);
+	}
 	m->m->u.user.revision = m->revision;
+
 	xs_init_match(m);
 	if (m == m->next)
 		return;
@@ -1328,7 +1313,8 @@ static void command_match(struct iptables_command_state *cs)
 					     m->extra_opts, &m->option_offset);
 }
 
-int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle)
+int do_command6(int argc, char *argv[], char **table,
+		struct xtc_handle **handle, bool restore)
 {
 	struct iptables_command_state cs;
 	struct ip6t_entry *e = NULL;
@@ -1337,6 +1323,7 @@ int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle
 	struct in6_addr *smasks = NULL, *dmasks = NULL;
 
 	int verbose = 0;
+	int wait = 0;
 	const char *chain = NULL;
 	const char *shostnetworkmask = NULL, *dhostnetworkmask = NULL;
 	const char *policy = NULL, *newname = NULL;
@@ -1372,7 +1359,7 @@ int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle
 
 	opts = xt_params->orig_opts;
 	while ((cs.c = getopt_long(argc, argv,
-	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvnt:m:xc:g:46",
+	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvw::nt:m:xc:g:46",
 					   opts, NULL)) != -1) {
 		switch (cs.c) {
 			/*
@@ -1472,14 +1459,7 @@ int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle
 			break;
 
 		case 'N':
-			if (optarg && (*optarg == '-' || *optarg == '!'))
-				xtables_error(PARAMETER_PROBLEM,
-					   "chain name not allowed to start "
-					   "with `%c'\n", *optarg);
-			if (xtables_find_target(optarg, XTF_TRY_LOAD))
-				xtables_error(PARAMETER_PROBLEM,
-					   "chain name may not clash "
-					   "with target name\n");
+			parse_chain(optarg);
 			add_command(&command, CMD_NEW_CHAIN, CMD_NONE,
 				    cs.invert);
 			chain = optarg;
@@ -1615,6 +1595,24 @@ int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle
 				set_option(&cs.options, OPT_VERBOSE,
 					   &cs.fw6.ipv6.invflags, cs.invert);
 			verbose++;
+			break;
+
+		case 'w':
+			if (restore) {
+				xtables_error(PARAMETER_PROBLEM,
+					      "You cannot use `-w' from "
+					      "ip6tables-restore");
+			}
+			wait = -1;
+			if (optarg) {
+				if (sscanf(optarg, "%i", &wait) != 1)
+					xtables_error(PARAMETER_PROBLEM,
+						"wait seconds not numeric");
+			} else if (optind < argc && argv[optind][0] != '-'
+						 && argv[optind][0] != '!')
+				if (sscanf(argv[optind++], "%i", &wait) != 1)
+					xtables_error(PARAMETER_PROBLEM,
+						"wait seconds not numeric");
 			break;
 
 		case 'm':
@@ -1763,10 +1761,16 @@ int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle
 
 	generic_opt_check(command, cs.options);
 
-	if (chain != NULL && strlen(chain) >= XT_EXTENSION_MAXNAMELEN)
-		xtables_error(PARAMETER_PROBLEM,
-			   "chain name `%s' too long (must be under %u chars)",
-			   chain, XT_EXTENSION_MAXNAMELEN);
+	/* Attempt to acquire the xtables lock */
+	if (!restore && !xtables_lock(wait)) {
+		fprintf(stderr, "Another app is currently holding the xtables lock. ");
+		if (wait == 0)
+			fprintf(stderr, "Perhaps you want to use the -w option?\n");
+		else
+			fprintf(stderr, "Stopped waiting after %ds.\n", wait);
+		xtables_free_opts(1);
+		exit(RESOURCE_PROBLEM);
+	}
 
 	/* only allocate handle if we weren't called with a handle */
 	if (!*handle)
@@ -1948,7 +1952,7 @@ int do_command6(int argc, char *argv[], char **table, struct xtc_handle **handle
 	if (verbose > 1)
 		dump_entries6(*handle);
 
-	clear_rule_matches(&cs.matches);
+	xtables_rule_matches_free(&cs.matches);
 
 	if (e != NULL) {
 		free(e);

@@ -6,8 +6,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <xtables.h>
 #include "xshared.h"
+
+#define XT_LOCK_NAME	"/run/xtables.lock"
 
 /*
  * Print out any special helps. A user might like to be able to add a --help
@@ -235,4 +242,25 @@ void xs_init_match(struct xtables_match *match)
 	}
 	if (match->init != NULL)
 		match->init(match->m);
+}
+
+bool xtables_lock(int wait)
+{
+	int fd, waited = 0, i = 0;
+
+	fd = open(XT_LOCK_NAME, O_CREAT, 0600);
+	if (fd < 0)
+		return true;
+
+	while (1) {
+		if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+			return true;
+		else if (wait >= 0 && waited >= wait)
+			return false;
+		if (++i % 2 == 0)
+			fprintf(stderr, "Another app is currently holding the xtables lock; "
+				"waiting (%ds) for it to exit...\n", waited);
+		waited++;
+		sleep(1);
+	}
 }

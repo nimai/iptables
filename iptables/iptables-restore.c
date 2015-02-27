@@ -22,11 +22,10 @@
 #define DEBUGP(x, args...)
 #endif
 
-static int binary = 0, counters = 0, verbose = 0, noflush = 0;
+static int counters = 0, verbose = 0, noflush = 0;
 
 /* Keeping track of external matches and targets.  */
 static const struct option options[] = {
-	{.name = "binary",   .has_arg = false, .val = 'b'},
 	{.name = "counters", .has_arg = false, .val = 'c'},
 	{.name = "verbose",  .has_arg = false, .val = 'v'},
 	{.name = "test",     .has_arg = false, .val = 't'},
@@ -43,8 +42,7 @@ static void print_usage(const char *name, const char *version) __attribute__((no
 
 static void print_usage(const char *name, const char *version)
 {
-	fprintf(stderr, "Usage: %s [-b] [-c] [-v] [-t] [-h]\n"
-			"	   [ --binary ]\n"
+	fprintf(stderr, "Usage: %s [-c] [-v] [-t] [-h]\n"
 			"	   [ --counters ]\n"
 			"	   [ --verbose ]\n"
 			"	   [ --test ]\n"
@@ -113,6 +111,70 @@ static void free_argv(void) {
 		free(newargv[i]);
 }
 
+static void add_param_to_argv(char *parsestart)
+{
+	int quote_open = 0, escaped = 0, param_len = 0;
+	char param_buffer[1024], *curchar;
+
+	/* After fighting with strtok enough, here's now
+	 * a 'real' parser. According to Rusty I'm now no
+	 * longer a real hacker, but I can live with that */
+
+	for (curchar = parsestart; *curchar; curchar++) {
+		if (quote_open) {
+			if (escaped) {
+				param_buffer[param_len++] = *curchar;
+				escaped = 0;
+				continue;
+			} else if (*curchar == '\\') {
+				escaped = 1;
+				continue;
+			} else if (*curchar == '"') {
+				quote_open = 0;
+				*curchar = ' ';
+			} else {
+				param_buffer[param_len++] = *curchar;
+				continue;
+			}
+		} else {
+			if (*curchar == '"') {
+				quote_open = 1;
+				continue;
+			}
+		}
+
+		if (*curchar == ' '
+		    || *curchar == '\t'
+		    || * curchar == '\n') {
+			if (!param_len) {
+				/* two spaces? */
+				continue;
+			}
+
+			param_buffer[param_len] = '\0';
+
+			/* check if table name specified */
+			if (!strncmp(param_buffer, "-t", 2)
+			    || !strncmp(param_buffer, "--table", 8)) {
+				xtables_error(PARAMETER_PROBLEM,
+				"The -t option (seen in line %u) cannot be "
+				"used in iptables-restore.\n", line);
+				exit(1);
+			}
+
+			add_argv(param_buffer);
+			param_len = 0;
+		} else {
+			/* regular character, copy to buffer */
+			param_buffer[param_len++] = *curchar;
+
+			if (param_len >= sizeof(param_buffer))
+				xtables_error(PARAMETER_PROBLEM,
+				   "Parameter too long!");
+		}
+	}
+}
+
 int
 iptables_restore_main(int argc, char *argv[])
 {
@@ -143,7 +205,7 @@ iptables_restore_main(int argc, char *argv[])
 	while ((c = getopt_long(argc, argv, "bcvthnM:T:", options, NULL)) != -1) {
 		switch (c) {
 			case 'b':
-				binary = 1;
+				fprintf(stderr, "-b/--binary option is not implemented\n");
 				break;
 			case 'c':
 				counters = 1;
@@ -325,11 +387,6 @@ iptables_restore_main(int argc, char *argv[])
 			char *bcnt = NULL;
 			char *parsestart;
 
-			/* the parser */
-			char *curchar;
-			int quote_open, escaped;
-			size_t param_len;
-
 			/* reset the newargv */
 			newargc = 0;
 
@@ -370,69 +427,7 @@ iptables_restore_main(int argc, char *argv[])
 				add_argv((char *) bcnt);
 			}
 
-			/* After fighting with strtok enough, here's now
-			 * a 'real' parser. According to Rusty I'm now no
-			 * longer a real hacker, but I can live with that */
-
-			quote_open = 0;
-			escaped = 0;
-			param_len = 0;
-
-			for (curchar = parsestart; *curchar; curchar++) {
-				char param_buffer[1024];
-
-				if (quote_open) {
-					if (escaped) {
-						param_buffer[param_len++] = *curchar;
-						escaped = 0;
-						continue;
-					} else if (*curchar == '\\') {
-						escaped = 1;
-						continue;
-					} else if (*curchar == '"') {
-						quote_open = 0;
-						*curchar = ' ';
-					} else {
-						param_buffer[param_len++] = *curchar;
-						continue;
-					}
-				} else {
-					if (*curchar == '"') {
-						quote_open = 1;
-						continue;
-					}
-				}
-
-				if (*curchar == ' '
-				    || *curchar == '\t'
-				    || * curchar == '\n') {
-					if (!param_len) {
-						/* two spaces? */
-						continue;
-					}
-
-					param_buffer[param_len] = '\0';
-
-					/* check if table name specified */
-					if (!strncmp(param_buffer, "-t", 2)
-					    || !strncmp(param_buffer, "--table", 8)) {
-						xtables_error(PARAMETER_PROBLEM,
-						   "Line %u seems to have a "
-						   "-t table option.\n", line);
-						exit(1);
-					}
-
-					add_argv(param_buffer);
-					param_len = 0;
-				} else {
-					/* regular character, copy to buffer */
-					param_buffer[param_len++] = *curchar;
-
-					if (param_len >= sizeof(param_buffer))
-						xtables_error(PARAMETER_PROBLEM,
-						   "Parameter too long!");
-				}
-			}
+			add_param_to_argv(parsestart);
 
 			DEBUGP("calling do_command4(%u, argv, &%s, handle):\n",
 				newargc, curtable);
@@ -441,7 +436,7 @@ iptables_restore_main(int argc, char *argv[])
 				DEBUGP("argv[%u]: %s\n", a, newargv[a]);
 
 			ret = do_command4(newargc, newargv,
-					 &newargv[2], &handle);
+					 &newargv[2], &handle, true);
 
 			free_argv();
 			fflush(stdout);

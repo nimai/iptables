@@ -367,7 +367,8 @@ static void
 do_rule_part(char *leveltag1, char *leveltag2, int part, int argc,
 	     char *argv[], int argvattr[])
 {
-	int arg = 1;		// ignore leading -A
+	int i;
+	int arg = 2;		// ignore leading -A <chain>
 	char invert_next = 0;
 	char *spacer = "";	// space when needed to assemble arguments
 	char *level1 = NULL;
@@ -399,11 +400,17 @@ do_rule_part(char *leveltag1, char *leveltag2, int part, int argc,
 			arg++;
 	}
 
-	/* Before we start, if the first arg is -[^-] and not -m or -j or -g 
-	   then start a dummy <match> tag for old style built-in matches.  
-	   We would do this in any case, but no need if it would be empty */
-	if (arg < argc && argv[arg][0] == '-' && !isTarget(argv[arg])
-	    && strcmp(argv[arg], "-m") != 0) {
+	/* Before we start, if the first arg is -[^-] and not -m or -j or -g
+	 * then start a dummy <match> tag for old style built-in matches.
+	 * We would do this in any case, but no need if it would be empty.
+	 * In the case of negation, we need to look at arg+1
+	 */
+	if (arg < argc && strcmp(argv[arg], "!") == 0)
+		i = arg + 1;
+	else
+		i = arg;
+	if (i < argc && argv[i][0] == '-' && !isTarget(argv[i])
+	    && strcmp(argv[i], "-m") != 0) {
 		OPEN_LEVEL(1, "match");
 		printf(">\n");
 	}
@@ -733,6 +740,7 @@ iptables_xml_main(int argc, char *argv[])
 			/* the parser */
 			char *param_start, *curchar;
 			int quote_open, quoted;
+			char param_buffer[1024];
 
 			/* reset the newargv */
 			newargc = 0;
@@ -792,7 +800,6 @@ iptables_xml_main(int argc, char *argv[])
 				}
 				if (*curchar == ' '
 				    || *curchar == '\t' || *curchar == '\n') {
-					char param_buffer[1024];
 					int param_len = curchar - param_start;
 
 					if (quote_open)
@@ -838,6 +845,11 @@ iptables_xml_main(int argc, char *argv[])
 			for (a = 0; a < newargc; a++)
 				DEBUGP("argv[%u]: %s\n", a, newargv[a]);
 
+			if (!chain) {
+				fprintf(stderr, "%s: line %u failed - no chain found\n",
+					prog_name, line);
+				exit(1);
+			}
 			needChain(chain);// Should we explicitly look for -A
 			do_rule(pcnt, bcnt, newargc, newargv, newargvattr);
 
